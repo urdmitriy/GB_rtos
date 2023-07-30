@@ -243,12 +243,9 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-      if (button_state) {
-          HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, SET);
-      } else{
-          HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, RESET);
-      }
-    osDelay(1);
+      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, button_state ? SET : RESET);
+
+      osDelay(1);
   }
   /* USER CODE END 5 */
 }
@@ -267,12 +264,10 @@ void StartTask02(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-      if (HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin)){
-          button_state = 1;
-      } else {
-          button_state = 0;
-      }
-    osDelay(10);
+
+      button_state = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
+
+      osDelay(10);
   }
   /* USER CODE END StartTask02 */
 }
