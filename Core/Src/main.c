@@ -32,6 +32,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define configUSE_TRACE_FACILITY                 1
+#define configGENERATE_RUN_TIME_STATS            1
+#define configUSE_STATS_FORMATTING_FUNCTIONS     1
+#define configSUPPORT_DYNAMIC_ALLOCATION         1
 
 /* USER CODE END PD */
 
@@ -42,17 +46,23 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-osThreadId defaultTaskHandle;
-osThreadId ButtonTaskHandle;
-/* USER CODE BEGIN PV */
+TIM_HandleTypeDef htim6;
 
+osThreadId defaultTaskHandle;
+osThreadId myTaskFastHandle;
+osThreadId myTaskIdleHandle;
+/* USER CODE BEGIN PV */
+long long FreeRTOSRunTimeTicks;
+char data[1000];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_TIM6_Init(void);
 void StartDefaultTask(void const * argument);
-void StartTask02(void const * argument);
+void StartTaskFast(void const * argument);
+void StartTaskIdle(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -91,6 +101,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -113,12 +124,16 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityLow, 0, 256);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-  /* definition and creation of ButtonTask */
-  osThreadDef(ButtonTask, StartTask02, osPriorityNormal, 0, 128);
-  ButtonTaskHandle = osThreadCreate(osThread(ButtonTask), NULL);
+  /* definition and creation of myTaskFast */
+  osThreadDef(myTaskFast, StartTaskFast, osPriorityHigh, 0, 256);
+  myTaskFastHandle = osThreadCreate(osThread(myTaskFast), NULL);
+
+  /* definition and creation of myTaskIdle */
+  osThreadDef(myTaskIdle, StartTaskIdle, osPriorityLow, 0, 256);
+  myTaskIdleHandle = osThreadCreate(osThread(myTaskIdle), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -132,7 +147,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-        HAL_NVIC_SystemReset();
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -190,6 +205,44 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 32-1;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 50-1;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -227,7 +280,17 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-    uint8_t button_state = 0;
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+    FreeRTOSRunTimeTicks++;
+}
+void configureTimerForRunTimeStats(void)
+{
+    HAL_TIM_Base_Start_IT(&htim6);
+    FreeRTOSRunTimeTicks= 0;
+}
+unsigned long getRunTimeCounterValue(void){
+    return FreeRTOSRunTimeTicks;
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -243,33 +306,57 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, button_state ? SET : RESET);
-
+      for (int i = 0; i < 10000; ++i) {
+          __NOP();
+      }
       osDelay(1);
   }
+
+    vTaskDelete(NULL);
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_StartTask02 */
+/* USER CODE BEGIN Header_StartTaskFast */
 /**
-* @brief Function implementing the ButtonTask thread.
+* @brief Function implementing the myTaskFast thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartTask02 */
-void StartTask02(void const * argument)
+/* USER CODE END Header_StartTaskFast */
+void StartTaskFast(void const * argument)
 {
-  /* USER CODE BEGIN StartTask02 */
-
+  /* USER CODE BEGIN StartTaskFast */
   /* Infinite loop */
   for(;;)
   {
+      for (int i = 0; i < 10000; ++i) {
+          __NOP();
+      }
 
-      button_state = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
-
-      osDelay(10);
+    osDelay(1);
   }
-  /* USER CODE END StartTask02 */
+  /* USER CODE END StartTaskFast */
+}
+
+/* USER CODE BEGIN Header_StartTaskIdle */
+/**
+* @brief Function implementing the myTaskIdle thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTaskIdle */
+void StartTaskIdle(void const * argument)
+{
+  /* USER CODE BEGIN StartTaskIdle */
+    /* Infinite loop */
+
+
+    for (;;) {
+        vTaskGetRunTimeStats(data);
+        HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+        osDelay(500);
+    }
+  /* USER CODE END StartTaskIdle */
 }
 
 /**
