@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "queue.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -32,7 +33,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define QUEUE_LENGTH 1
+#define QUEUE_ITEM_SIZE 1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,7 +47,7 @@
 osThreadId defaultTaskHandle;
 osThreadId ButtonTaskHandle;
 /* USER CODE BEGIN PV */
-
+QueueHandle_t xQueue;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -108,7 +110,8 @@ int main(void)
   /* USER CODE END RTOS_TIMERS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
-  /* add queues, ... */
+    xQueue = xQueueCreate(QUEUE_LENGTH, QUEUE_ITEM_SIZE);
+    if (xQueue == NULL) HAL_NVIC_SystemReset();
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
@@ -132,7 +135,7 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-        HAL_NVIC_SystemReset();
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -227,7 +230,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-    uint8_t button_state = 0;
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -243,9 +246,10 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
+      uint8_t button_state;
+      xQueueReceive(xQueue, &button_state, 100);
       HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, button_state ? SET : RESET);
-
-      osDelay(1);
+      osDelay(100);
   }
   /* USER CODE END 5 */
 }
@@ -265,9 +269,9 @@ void StartTask02(void const * argument)
   for(;;)
   {
 
-      button_state = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
-
-      osDelay(10);
+      uint8_t button_state = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
+      xQueueSend(xQueue, &button_state, 100);
+      osDelay(100);
   }
   /* USER CODE END StartTask02 */
 }
