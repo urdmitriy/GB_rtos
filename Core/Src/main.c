@@ -19,7 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include "queue.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -44,20 +43,24 @@
 
 /* Private variables ---------------------------------------------------------*/
 
+IWDG_HandleTypeDef hiwdg;
+
 osThreadId defaultTaskHandle;
 osThreadId ButtonTaskHandle;
 /* USER CODE BEGIN PV */
-QueueHandle_t xQueue;
+TimerHandle_t timer;
+TimerHandle_t timer_wd;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_IWDG_Init(void);
 void StartDefaultTask(void const * argument);
 void StartTask02(void const * argument);
 
 /* USER CODE BEGIN PFP */
-
+void TimerCallbackFunction( TimerHandle_t xTimer );
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -93,8 +96,16 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
 
+    timer = xTimerCreate("my_timer",pdMS_TO_TICKS(1000),pdTRUE,
+            "MY_TIMER",TimerCallbackFunction);
+    xTimerStart(timer, pdMS_TO_TICKS(10));
+
+    timer_wd = xTimerCreate("timer_wd",pdMS_TO_TICKS(100),pdTRUE,
+            "MY_TIMER_WD",TimerCallbackFunction);
+    xTimerStart(timer_wd, 100);
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -110,8 +121,7 @@ int main(void)
   /* USER CODE END RTOS_TIMERS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
-    xQueue = xQueueCreate(QUEUE_LENGTH, QUEUE_ITEM_SIZE);
-    if (xQueue == NULL) HAL_NVIC_SystemReset();
+
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
@@ -162,9 +172,10 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 8;
@@ -190,6 +201,35 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief IWDG Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_IWDG_Init(void)
+{
+
+  /* USER CODE BEGIN IWDG_Init 0 */
+
+  /* USER CODE END IWDG_Init 0 */
+
+  /* USER CODE BEGIN IWDG_Init 1 */
+
+  /* USER CODE END IWDG_Init 1 */
+  hiwdg.Instance = IWDG;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
+  hiwdg.Init.Window = 4095;
+  hiwdg.Init.Reload = 4095;
+  if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN IWDG_Init 2 */
+
+  /* USER CODE END IWDG_Init 2 */
+
 }
 
 /**
@@ -230,7 +270,13 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+void TimerCallbackFunction( TimerHandle_t xTimer ){
+    if (xTimer == timer){
+        HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+    } else  if (xTimer == timer_wd){
+        HAL_IWDG_Refresh(&hiwdg);
+    }
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -246,9 +292,7 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-      uint8_t button_state;
-      xQueueReceive(xQueue, &button_state, 100);
-      HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, button_state ? SET : RESET);
+
       osDelay(100);
   }
   /* USER CODE END 5 */
@@ -269,8 +313,6 @@ void StartTask02(void const * argument)
   for(;;)
   {
 
-      uint8_t button_state = HAL_GPIO_ReadPin(USER_Btn_GPIO_Port, USER_Btn_Pin);
-      xQueueSend(xQueue, &button_state, 100);
       osDelay(100);
   }
   /* USER CODE END StartTask02 */
