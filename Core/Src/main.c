@@ -32,8 +32,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define QUEUE_LENGTH 1
-#define QUEUE_ITEM_SIZE 1
+#define BIT_0 (1<<0)
+#define BIT_1 (1<<1)
+#define BIT_2 (1<<2)
+#define BIT_3 (1<<3)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -43,24 +45,28 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-IWDG_HandleTypeDef hiwdg;
-
 osThreadId defaultTaskHandle;
-osThreadId ButtonTaskHandle;
+osThreadId TaskButtonHandle;
+osThreadId TaskLed1Handle;
+osThreadId TaskLed2Handle;
+osThreadId TaskLed3Handle;
+osThreadId TaskLed4Handle;
 /* USER CODE BEGIN PV */
-TimerHandle_t timer;
-TimerHandle_t timer_wd;
+EventGroupHandle_t eventGroup;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_IWDG_Init(void);
 void StartDefaultTask(void const * argument);
-void StartTask02(void const * argument);
+void StartTaskButton(void const * argument);
+void StartTaskLed1(void const * argument);
+void StartTaskLed2(void const * argument);
+void StartTaskLed3(void const * argument);
+void StartTaskLed4(void const * argument);
 
 /* USER CODE BEGIN PFP */
-void TimerCallbackFunction( TimerHandle_t xTimer );
+void led_flash(GPIO_TypeDef* port, uint16_t pin);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -96,16 +102,9 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
+    eventGroup = xEventGroupCreate();
 
-    timer = xTimerCreate("my_timer",pdMS_TO_TICKS(1000),pdTRUE,
-            "MY_TIMER",TimerCallbackFunction);
-    xTimerStart(timer, pdMS_TO_TICKS(10));
-
-    timer_wd = xTimerCreate("timer_wd",pdMS_TO_TICKS(100),pdTRUE,
-            "MY_TIMER_WD",TimerCallbackFunction);
-    xTimerStart(timer_wd, 100);
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -129,9 +128,25 @@ int main(void)
   osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-  /* definition and creation of ButtonTask */
-  osThreadDef(ButtonTask, StartTask02, osPriorityNormal, 0, 128);
-  ButtonTaskHandle = osThreadCreate(osThread(ButtonTask), NULL);
+  /* definition and creation of TaskButton */
+  osThreadDef(TaskButton, StartTaskButton, osPriorityNormal, 0, 128);
+  TaskButtonHandle = osThreadCreate(osThread(TaskButton), NULL);
+
+  /* definition and creation of TaskLed1 */
+  osThreadDef(TaskLed1, StartTaskLed1, osPriorityIdle, 0, 128);
+  TaskLed1Handle = osThreadCreate(osThread(TaskLed1), NULL);
+
+  /* definition and creation of TaskLed2 */
+  osThreadDef(TaskLed2, StartTaskLed2, osPriorityIdle, 0, 128);
+  TaskLed2Handle = osThreadCreate(osThread(TaskLed2), NULL);
+
+  /* definition and creation of TaskLed3 */
+  osThreadDef(TaskLed3, StartTaskLed3, osPriorityIdle, 0, 128);
+  TaskLed3Handle = osThreadCreate(osThread(TaskLed3), NULL);
+
+  /* definition and creation of TaskLed4 */
+  osThreadDef(TaskLed4, StartTaskLed4, osPriorityIdle, 0, 128);
+  TaskLed4Handle = osThreadCreate(osThread(TaskLed4), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -142,6 +157,7 @@ int main(void)
   /* We should never get here as control is now taken by the scheduler */
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
   while (1)
   {
     /* USER CODE END WHILE */
@@ -172,10 +188,9 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 8;
@@ -204,35 +219,6 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief IWDG Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_IWDG_Init(void)
-{
-
-  /* USER CODE BEGIN IWDG_Init 0 */
-
-  /* USER CODE END IWDG_Init 0 */
-
-  /* USER CODE BEGIN IWDG_Init 1 */
-
-  /* USER CODE END IWDG_Init 1 */
-  hiwdg.Instance = IWDG;
-  hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
-  hiwdg.Init.Window = 4095;
-  hiwdg.Init.Reload = 4095;
-  if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN IWDG_Init 2 */
-
-  /* USER CODE END IWDG_Init 2 */
-
-}
-
-/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -247,10 +233,15 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, LD1_Pin|LED2_Pin|LED1_Pin|LD3_Pin
+                          |LD2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOE, LED4_Pin|LED3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : USER_Btn_Pin */
   GPIO_InitStruct.Pin = USER_Btn_Pin;
@@ -258,24 +249,38 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USER_Btn_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LD1_Pin LD3_Pin LD2_Pin */
-  GPIO_InitStruct.Pin = LD1_Pin|LD3_Pin|LD2_Pin;
+  /*Configure GPIO pins : LD1_Pin LED2_Pin LED1_Pin LD3_Pin
+                           LD2_Pin */
+  GPIO_InitStruct.Pin = LD1_Pin|LED2_Pin|LED1_Pin|LD3_Pin
+                          |LD2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : BUTTON3_Pin BUTTON4_Pin BUTTON2_Pin BUTTON1_Pin */
+  GPIO_InitStruct.Pin = BUTTON3_Pin|BUTTON4_Pin|BUTTON2_Pin|BUTTON1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : LED4_Pin LED3_Pin */
+  GPIO_InitStruct.Pin = LED4_Pin|LED3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
-void TimerCallbackFunction( TimerHandle_t xTimer ){
-    if (xTimer == timer){
-        HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
-    } else  if (xTimer == timer_wd){
-        HAL_IWDG_Refresh(&hiwdg);
-    }
+void led_flash(GPIO_TypeDef* port, uint16_t pin){
+    HAL_GPIO_WritePin(port, pin, SET);
+    osDelay(100);
+    HAL_GPIO_WritePin(port, pin, RESET);
+    osDelay(1);
 }
 /* USER CODE END 4 */
 
@@ -298,24 +303,119 @@ void StartDefaultTask(void const * argument)
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_StartTask02 */
+/* USER CODE BEGIN Header_StartTaskButton */
 /**
-* @brief Function implementing the ButtonTask thread.
+* @brief Function implementing the TaskButton thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartTask02 */
-void StartTask02(void const * argument)
+/* USER CODE END Header_StartTaskButton */
+void StartTaskButton(void const * argument)
 {
-  /* USER CODE BEGIN StartTask02 */
-
+  /* USER CODE BEGIN StartTaskButton */
   /* Infinite loop */
   for(;;)
   {
+      EventBits_t eventBits;
 
-      osDelay(100);
+      if (HAL_GPIO_ReadPin(BUTTON1_GPIO_Port, BUTTON1_Pin) == RESET) {
+          xEventGroupSetBits(eventGroup, BIT_0);
+      }
+
+      if (HAL_GPIO_ReadPin(BUTTON2_GPIO_Port, BUTTON2_Pin) == RESET) {
+          xEventGroupSetBits(eventGroup, BIT_1);
+      }
+
+      if (HAL_GPIO_ReadPin(BUTTON3_GPIO_Port, BUTTON3_Pin) == RESET) {
+          xEventGroupSetBits(eventGroup, BIT_2);
+      }
+
+      if (HAL_GPIO_ReadPin(BUTTON4_GPIO_Port, BUTTON4_Pin) == RESET) {
+          xEventGroupSetBits(eventGroup, BIT_3);
+      }
+
+      osDelay(2);
   }
-  /* USER CODE END StartTask02 */
+  /* USER CODE END StartTaskButton */
+}
+
+/* USER CODE BEGIN Header_StartTaskLed1 */
+/**
+* @brief Function implementing the TaskLed1 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTaskLed1 */
+void StartTaskLed1(void const * argument)
+{
+  /* USER CODE BEGIN StartTaskLed1 */
+  /* Infinite loop */
+  for(;;)
+  {
+      xEventGroupWaitBits(eventGroup, BIT_0|BIT_3, pdTRUE, pdTRUE, portMAX_DELAY);
+      led_flash(LED1_GPIO_Port,LED1_Pin);
+  }
+  /* USER CODE END StartTaskLed1 */
+}
+
+/* USER CODE BEGIN Header_StartTaskLed2 */
+/**
+* @brief Function implementing the TaskLed2 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTaskLed2 */
+void StartTaskLed2(void const * argument)
+{
+  /* USER CODE BEGIN StartTaskLed2 */
+  /* Infinite loop */
+  for(;;)
+  {
+      xEventGroupWaitBits(eventGroup, BIT_0, pdTRUE, pdTRUE, portMAX_DELAY);
+      led_flash(LED2_GPIO_Port, LED2_Pin);
+  }
+  /* USER CODE END StartTaskLed2 */
+}
+
+/* USER CODE BEGIN Header_StartTaskLed3 */
+/**
+* @brief Function implementing the TaskLed3 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTaskLed3 */
+void StartTaskLed3(void const * argument)
+{
+  /* USER CODE BEGIN StartTaskLed3 */
+  /* Infinite loop */
+  for(;;)
+  {
+      xEventGroupWaitBits(eventGroup, BIT_2|BIT_3, pdTRUE, pdTRUE, portMAX_DELAY);
+      led_flash(LED3_GPIO_Port, LED3_Pin);
+  }
+  /* USER CODE END StartTaskLed3 */
+}
+
+/* USER CODE BEGIN Header_StartTaskLed4 */
+/**
+* @brief Function implementing the TaskLed3 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTaskLed4 */
+void StartTaskLed4(void const * argument)
+{
+  /* USER CODE BEGIN StartTaskLed4 */
+  /* Infinite loop */
+  for(;;)
+  {
+      xEventGroupWaitBits(eventGroup, BIT_0|BIT_1|BIT_2|BIT_3, pdTRUE, pdFALSE, portMAX_DELAY);
+      HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, SET);
+      osDelay(100);
+      HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, RESET);
+      osDelay(1);
+  }
+  /* USER CODE END StartTaskLed4 */
 }
 
 /**
